@@ -40,6 +40,12 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        'ctj-api' => [
+        'driver' => 'token',
+        'provider' => 'users',
+        'hash' => false,
+    ],
     ],
 
     /*

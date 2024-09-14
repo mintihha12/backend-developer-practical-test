@@ -17,7 +17,11 @@ class PostController extends Controller
 {
     public function list()
     {
-        $posts = Post::withCount('likes')->with('tags')->paginate();
+        // $posts = Post::withCount('likes')->with('tags')->paginate();
+
+        $posts = Post::with('tags')
+                        ->withCount('likes')
+                        ->paginate();
 
         return new PostCollection($posts);
     }
@@ -71,6 +75,68 @@ class PostController extends Controller
             return response()->json([
                 'status'  => Response::HTTP_NOT_FOUND,
                 'message' => 'model not found',
+            ], Response::HTTP_NOT_FOUND);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => Response::HTTP_INTERNAL_SERVER_ERROR,
+                'message' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function postReaction(PostToggleReactionRequest $request)
+    {
+        try {
+            // Retrieve post with likes related to the current user
+            $post = Post::with(['likes' => function (HasMany $query) {
+                    $query->whereBelongsTo(Auth::user());
+                }])
+                ->findOrFail($request->post_id);
+
+            // Check if user tries to like their own post
+            if (Gate::denies('like-post', $post)) {
+                throw new UserLikeOwnPostException();
+            }
+
+            // Check if user already liked the post
+            if ($post->likes->isNotEmpty()) {
+                if ($request->boolean('like')) {
+                    throw new UserAlreadyLikedPostException();
+                }
+
+                // Unlike the post
+                $post->likes->map->delete();
+
+                return response()->json([
+                    'status'  => Response::HTTP_OK,
+                    'message' => 'You unliked this post successfully',
+                ]);
+            }
+
+            // Like the post
+            $post->likes()->create([
+                'user_id' => Auth::id(),
+            ]);
+
+            return response()->json([
+                'status'  => Response::HTTP_OK,
+                'message' => 'You liked this post successfully',
+            ]);
+
+        } catch (UserLikeOwnPostException $e) {
+            return response()->json([
+                'status'  => Response::HTTP_BAD_REQUEST,
+                'message' => 'You cannot like your own post',
+            ], Response::HTTP_BAD_REQUEST);
+        } catch (UserAlreadyLikedPostException $e) {
+            return response()->json([
+                'status'  => Response::HTTP_BAD_REQUEST,
+                'message' => 'You already liked this post',
+            ], Response::HTTP_BAD_REQUEST);
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'status'  => Response::HTTP_NOT_FOUND,
+                'message' => 'Post not found',
             ], Response::HTTP_NOT_FOUND);
         } catch (\Throwable $e) {
             return response()->json([
